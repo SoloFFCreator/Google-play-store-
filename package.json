@@ -1,0 +1,13 @@
+{
+  "name": "google-play-scraper-api",
+  "version": "1.0.0",
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node api/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "google-play-scraper": "^10.0.0"
+  }
+}
+
