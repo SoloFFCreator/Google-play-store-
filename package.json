@@ -1,13 +1,20 @@
 {
   "name": "google-play-scraper-api",
   "version": "1.0.0",
+  "description": "Production-ready Google Play Store Scraper API running as a Vercel Serverless Function.",
+
   "type": "module",
-  "main": "api/index.js",
+
   "scripts": {
     "start": "node api/index.js"
   },
+
   "dependencies": {
-    "express": "^4.19.2",
-    "google-play-scraper": "^10.0.0"
+    "express": "^4.18.2",
+    "google-play-scraper": "^9.1.0"
+  },
+
+  "engines": {
+    "node": ">=18.x"
   }
 }
