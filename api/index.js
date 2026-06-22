@@ -6,7 +6,7 @@ const app = express();
 // 1. Global Middleware & Security Configuration
 app.use(express.json());
 
-// Built-in CORS handler for smooth cross-origin consumption
+// Cross-Origin Resource Sharing (CORS) safe handling
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -17,100 +17,109 @@ app.use((req, res, next) => {
     next();
 });
 
-// 2. Async Handler Wrapper to eliminate unhandled code rejections cleanly
+// Async wrapper to prevent unhandled promise rejections from killing the serverless container
 const asyncHandler = (fn) => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-// 3. API Routes
+// 2. API Routes
 
 /**
  * GET /
- * Health Check Endpoint
+ * Health check endpoint
  */
 app.get('/', (req, res) => {
     res.status(200).json({
         status: 'success',
-        message: 'Google Play Store Scraper API is online.'
+        message: 'Google Play Store Scraper API is active and running.'
     });
 });
 
 /**
  * GET /app
- * Fetches and structures deep data/metadata for a single package identifier.
+ * Fetches thorough metadata and media assets for a unique package ID.
  */
 app.get('/app', asyncHandler(async (req, res) => {
     const { appId, lang = 'en', country = 'us' } = req.query;
 
-    // Strict validation check for input parameters
     if (!appId || typeof appId !== 'string' || !appId.trim()) {
         return res.status(400).json({
             status: 'fail',
-            error: "Missing or invalid required query string: 'appId'."
+            error: "Missing or invalid required query string parameter: 'appId'."
         });
     }
 
     try {
         const data = await gplay.app({ appId: appId.trim(), lang, country });
         
-        // Return structured, type-safe data payload
+        // Defensive date conversion to prevent parsing crashes if Google changes format
+        let safeUpdatedDate = null;
+        if (data.updated) {
+            try {
+                safeUpdatedDate = new Date(data.updated).toISOString();
+            } catch (e) {
+                safeUpdatedDate = String(data.updated);
+            }
+        }
+
+        // Return perfectly structured, type-safe data payload
         return res.status(200).json({
             status: 'success',
             data: {
-                appId: data.appId,
-                title: data.title,
-                summary: data.summary || '',
-                description: data.description || '',
+                appId: data.appId || appId.trim(),
+                title: data.title || 'Unknown Title',
+                summary: data.summary ?? '',
+                description: data.description ?? '',
                 developer: {
-                    name: data.developer,
-                    id: data.developerId,
-                    email: data.developerEmail || null,
-                    website: data.developerWebsite || null,
-                    address: data.developerAddress || null
+                    name: data.developer ?? 'Unknown Developer',
+                    id: data.developerId ?? null,
+                    email: data.developerEmail ?? null,
+                    website: data.developerWebsite ?? null,
+                    address: data.developerAddress ?? null
                 },
                 metrics: {
-                    score: data.score || 0,
-                    scoreText: data.scoreText || "0",
-                    ratings: data.ratings || 0,
-                    reviews: data.reviews || 0,
-                    installs: data.installs || "0+",
-                    price: data.price || 0,
+                    score: data.score ?? 0,
+                    scoreText: data.scoreText ?? "0",
+                    ratings: data.ratings ?? 0,
+                    reviews: data.reviews ?? 0,
+                    installs: data.installs ?? "0+",
+                    price: data.price ?? 0,
                     free: data.free ?? true,
-                    currency: data.currency || "USD"
+                    currency: data.currency ?? "USD"
                 },
                 metadata: {
-                    genre: data.genre || 'Unknown',
-                    genreId: data.genreId || 'Unknown',
-                    contentRating: data.contentRating || 'Everyone',
-                    released: data.released || null,
-                    updated: data.updated ? new Date(data.updated).toISOString() : null,
-                    version: data.version || 'Varies with device'
+                    genre: data.genre ?? 'Unknown',
+                    genreId: data.genreId ?? 'Unknown',
+                    contentRating: data.contentRating ?? 'Everyone',
+                    released: data.released ?? null,
+                    updated: safeUpdatedDate,
+                    version: data.version ?? 'Varies with device'
                 },
                 media: {
-                    icon: data.icon || null,
-                    headerImage: data.headerImage || null,
-                    screenshots: data.screenshots || [],
-                    video: data.video || null,
-                    videoImage: data.videoImage || null
+                    icon: data.icon ?? null,
+                    headerImage: data.headerImage ?? null,
+                    screenshots: data.screenshots ?? [],
+                    video: data.video ?? null,
+                    videoImage: data.videoImage ?? null
                 }
             }
         });
     } catch (error) {
-        // Differentiate between a clean 404 (Not Found) vs a 500 downstream network failure
-        const isNotFound = error.message && error.message.toLowerCase().includes('not found');
+        const errorMsg = error.message ? error.message.toLowerCase() : '';
+        const isNotFound = errorMsg.includes('not found') || errorMsg.includes('404');
         const statusCode = isNotFound ? 404 : 500;
         
         return res.status(statusCode).json({
             status: 'error',
-            message: isNotFound ? `App with package ID '${appId}' could not be located.` : 'Downstream connection failure.',
-            ...(process.env.NODE_ENV !== 'production' && { debug_details: error.message })
+            message: isNotFound ? `App with package ID '${appId}' could not be located.` : 'Failed to communicate with downstream Google Play servers.',
+            debug_details: process.env.NODE_ENV !== 'production' ? error.message : undefined
         });
     }
 }));
 
 /**
  * GET /search
- * Executes a scoped keyword search across global listings.
+ * Searches the store catalog using keywords.
  */
 app.get('/search', asyncHandler(async (req, res) => {
     const { query, lang = 'en', country = 'us', limit = '20' } = req.query;
@@ -118,7 +127,7 @@ app.get('/search', asyncHandler(async (req, res) => {
     if (!query || typeof query !== 'string' || !query.trim()) {
         return res.status(400).json({
             status: 'fail',
-            error: "Missing or invalid required query string: 'query'."
+            error: "Missing or invalid required query string parameter: 'query'."
         });
     }
 
@@ -130,7 +139,7 @@ app.get('/search', asyncHandler(async (req, res) => {
         });
     }
 
-    // Performance protection: limit maximum records processed per execution block
+    // Safety ceiling limit to optimize lambda function execution times
     const finalLimit = Math.min(parsedLimit, 100);
 
     try {
@@ -141,15 +150,15 @@ app.get('/search', asyncHandler(async (req, res) => {
             num: finalLimit
         });
 
-        const formattedResults = results.map(appItem => ({
+        const formattedResults = (results || []).map(appItem => ({
             appId: appItem.appId,
-            title: appItem.title,
-            developer: appItem.developer,
-            score: appItem.score || 0,
-            price: appItem.price || 0,
+            title: appItem.title || 'Unknown Title',
+            developer: appItem.developer ?? 'Unknown Developer',
+            score: appItem.score ?? 0,
+            price: appItem.price ?? 0,
             free: appItem.free ?? true,
-            icon: appItem.icon || null,
-            screenshots: appItem.screenshots || []
+            icon: appItem.icon ?? null,
+            screenshots: appItem.screenshots ?? []
         }));
 
         return res.status(200).json({
@@ -161,20 +170,21 @@ app.get('/search', asyncHandler(async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Failed to complete store query search lookup operations.',
-            ...(process.env.NODE_ENV !== 'production' && { debug_details: error.message })
+            debug_details: process.env.NODE_ENV !== 'production' ? error.message : undefined
         });
     }
 }));
 
-// 4. Centralized Global Fallback Error Handler Middleware
+// 3. Centralized Fallback Error Handler Middleware
 app.use((err, req, res, next) => {
-    console.error('Unhandled Internal Engine Exception:', err.stack || err);
+    console.error('Captured Critical Exception:', err.stack || err);
     
+    // Always return a valid JSON payload to prevent Vercel's blank HTML 500 page crash
     res.status(500).json({
         status: 'error',
-        message: 'A critical server-side operation exception occurred.'
+        message: 'A critical internal server-side exception occurred.'
     });
 });
 
-// Export configured runtime application context directly for Vercel
+// Export the configured Express app context for the Vercel serverless environment
 module.exports = app;
