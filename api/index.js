@@ -1,12 +1,12 @@
-const express = require('express');
-const gplay = require('google-play-scraper');
+import express from 'express';
+import gplay from 'google-play-scraper';
 
 const app = express();
 
 // 1. Global Middleware & Security Configuration
 app.use(express.json());
 
-// Cross-Origin Resource Sharing (CORS) safe handling
+// Strict Cross-Origin Resource Sharing (CORS) safe handling
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -17,16 +17,16 @@ app.use((req, res, next) => {
     next();
 });
 
-// Async wrapper to prevent unhandled promise rejections from killing the serverless container
+// Clean async safety wrapper
 const asyncHandler = (fn) => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-// 2. API Routes
+// 2. API Endpoints
 
 /**
  * GET /
- * Health check endpoint
+ * Root Health check
  */
 app.get('/', (req, res) => {
     res.status(200).json({
@@ -37,7 +37,7 @@ app.get('/', (req, res) => {
 
 /**
  * GET /app
- * Fetches thorough metadata and media assets for a unique package ID.
+ * Fetches deep application details and assets
  */
 app.get('/app', asyncHandler(async (req, res) => {
     const { appId, lang = 'en', country = 'us' } = req.query;
@@ -52,7 +52,6 @@ app.get('/app', asyncHandler(async (req, res) => {
     try {
         const data = await gplay.app({ appId: appId.trim(), lang, country });
         
-        // Defensive date conversion to prevent parsing crashes if Google changes format
         let safeUpdatedDate = null;
         if (data.updated) {
             try {
@@ -62,7 +61,6 @@ app.get('/app', asyncHandler(async (req, res) => {
             }
         }
 
-        // Return perfectly structured, type-safe data payload
         return res.status(200).json({
             status: 'success',
             data: {
@@ -112,14 +110,14 @@ app.get('/app', asyncHandler(async (req, res) => {
         return res.status(statusCode).json({
             status: 'error',
             message: isNotFound ? `App with package ID '${appId}' could not be located.` : 'Failed to communicate with downstream Google Play servers.',
-            debug_details: process.env.NODE_ENV !== 'production' ? error.message : undefined
+            debug_details: error.message
         });
     }
 }));
 
 /**
  * GET /search
- * Searches the store catalog using keywords.
+ * Searches store listings by keyword strings
  */
 app.get('/search', asyncHandler(async (req, res) => {
     const { query, lang = 'en', country = 'us', limit = '20' } = req.query;
@@ -139,7 +137,6 @@ app.get('/search', asyncHandler(async (req, res) => {
         });
     }
 
-    // Safety ceiling limit to optimize lambda function execution times
     const finalLimit = Math.min(parsedLimit, 100);
 
     try {
@@ -170,7 +167,7 @@ app.get('/search', asyncHandler(async (req, res) => {
         return res.status(500).json({
             status: 'error',
             message: 'Failed to complete store query search lookup operations.',
-            debug_details: process.env.NODE_ENV !== 'production' ? error.message : undefined
+            debug_details: error.message
         });
     }
 }));
@@ -178,13 +175,11 @@ app.get('/search', asyncHandler(async (req, res) => {
 // 3. Centralized Fallback Error Handler Middleware
 app.use((err, req, res, next) => {
     console.error('Captured Critical Exception:', err.stack || err);
-    
-    // Always return a valid JSON payload to prevent Vercel's blank HTML 500 page crash
     res.status(500).json({
         status: 'error',
         message: 'A critical internal server-side exception occurred.'
     });
 });
 
-// Export the configured Express app context for the Vercel serverless environment
-module.exports = app;
+// Modern ESM default export for Vercel
+export default app;
